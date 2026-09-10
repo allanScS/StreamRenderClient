@@ -13,6 +13,7 @@ export async function conectarAoProjeto(baseUrl, idDoProjeto, handlers) {
 
   conexao.on('quadroProcessado', (evento) => handlers.onQuadroProcessado?.(evento))
   conexao.on('projetoConsolidado', (evento) => handlers.onProjetoConsolidado?.(evento))
+  conexao.on('liderEleito', (evento) => handlers.onLiderEleito?.(evento))
 
   await conexao.start()
   if (conexao.state === HubConnectionState.Connected) {

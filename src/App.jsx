@@ -108,6 +108,7 @@ export default function App() {
   const [situacao, setSituacao] = useState(null)
   const [workers, setWorkers] = useState(estadoInicialWorkers)
   const [liveOk, setLiveOk] = useState(false)
+  const [lider, setLider] = useState(null)
   const inputArquivoRef = useRef(null)
   const pollRef = useRef(null)
   const hubRef = useRef(null)
@@ -125,9 +126,12 @@ export default function App() {
     const sequencia = ++saudeSeqRef.current
 
     try {
-      await verificarSaude(url.replace(/\/$/, ''), { signal: controlador.signal })
+      const saude = await verificarSaude(url.replace(/\/$/, ''), { signal: controlador.signal })
       if (sequencia !== saudeSeqRef.current) return
       setApiOnline(true)
+      if (saude?.idDoWorkerLider) {
+        setLider(saude.idDoWorkerLider)
+      }
       salvarBaseUrl(url.replace(/\/$/, ''))
       setErro((atual) => (atual.includes('API local') ? '' : atual))
     } catch (erroChecagem) {
@@ -161,6 +165,9 @@ export default function App() {
         if (cancelado) return
         setSituacao(dados)
         setWorkers((anterior) => workersAPartirDaSituacao(dados, anterior))
+        if (dados.idDoWorkerLider) {
+          setLider(dados.idDoWorkerLider)
+        }
         if (dados.consolidado) {
           clearInterval(pollRef.current)
         }
@@ -191,9 +198,13 @@ export default function App() {
               const dados = await consultarProjeto(base, projeto.idDoProjeto)
               setSituacao(dados)
               setWorkers((anterior) => workersAPartirDaSituacao(dados, anterior))
+              if (dados.idDoWorkerLider) setLider(dados.idDoWorkerLider)
             } catch {
               // poll cobre
             }
+          },
+          onLiderEleito: (evento) => {
+            if (evento?.idDoWorkerLider) setLider(evento.idDoWorkerLider)
           },
         })
         if (cancelado) {
@@ -272,6 +283,8 @@ export default function App() {
     : 0
 
   const totalVistos = WORKERS.reduce((acc, id) => acc + (workers[id]?.contagem ?? 0), 0)
+  const farmAtivo = Boolean(projeto && !situacao?.consolidado)
+  const idDoLider = situacao?.idDoWorkerLider || lider
 
   return (
     <div className="page wide">
@@ -383,8 +396,8 @@ export default function App() {
 
           {erro && <p className="hint error">{erro}</p>}
 
-          <button type="submit" className="primary" disabled={enviando || !arquivo}>
-            {enviando ? 'Enviando…' : 'Renderizar na farm'}
+          <button type="submit" className="primary" disabled={enviando || !arquivo || farmAtivo}>
+            {enviando ? 'Enviando…' : farmAtivo ? 'Farm em andamento…' : 'Renderizar na farm'}
           </button>
         </form>
 
@@ -415,12 +428,10 @@ export default function App() {
                   <dt>Na farm</dt>
                   <dd>{totalVistos}</dd>
                 </div>
-                {situacao?.idDoWorkerLider && (
-                  <div>
-                    <dt>Líder</dt>
-                    <dd className="mono">{situacao.idDoWorkerLider}</dd>
-                  </div>
-                )}
+                <div>
+                  <dt>Líder</dt>
+                  <dd className="mono">{idDoLider ?? 'elegendo…'}</dd>
+                </div>
               </dl>
 
               <div className="progress-block">
@@ -443,14 +454,14 @@ export default function App() {
           <div className="worker-grid">
             {WORKERS.map((id) => {
               const slot = workers[id]
-              const lider = situacao?.idDoWorkerLider === id
+              const liderDoCard = idDoLider === id
               const atual = slot?.atual ?? null
               const contagem = slot?.contagem ?? 0
               return (
-                <article key={id} className={`worker-card ${lider ? 'leader' : ''}`}>
+                <article key={id} className={`worker-card ${liderDoCard ? 'leader' : ''}`}>
                   <header>
                     <strong className="mono">{id}</strong>
-                    {lider && <span className="badge">líder</span>}
+                    {liderDoCard && <span className="badge">líder</span>}
                   </header>
                   <div className="worker-stage">
                     {!projeto || atual == null ? (
@@ -484,17 +495,12 @@ export default function App() {
           {situacao?.consolidado && projeto && (
             <div className="done">
               <p>Vídeo pronto. O líder montou o arquivo final.</p>
-              <a
-                className="primary link"
-                href={urlDoVideo(base, projeto.idDoProjeto)}
-                download
-              >
-                Baixar vídeo
-              </a>
               <video
                 className="result-video"
                 src={urlDoVideo(base, projeto.idDoProjeto)}
                 controls
+                playsInline
+                preload="auto"
               />
             </div>
           )}
