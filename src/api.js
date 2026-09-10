@@ -1,14 +1,31 @@
 const API_PADRAO = 'http://localhost:8080'
 
-export async function verificarSaude(baseUrl) {
-  const resposta = await fetch(`${baseUrl}/saude`, {
-    method: 'GET',
-    cache: 'no-store',
-  })
-  if (!resposta.ok) {
-    throw new Error(`API respondeu ${resposta.status}`)
+export async function verificarSaude(baseUrl, { signal } = {}) {
+  const controlador = new AbortController()
+  const encerrarPorTimeout = setTimeout(() => controlador.abort(), 2500)
+
+  if (signal) {
+    if (signal.aborted) {
+      clearTimeout(encerrarPorTimeout)
+      throw new DOMException('Aborted', 'AbortError')
+    }
+    signal.addEventListener('abort', () => controlador.abort(), { once: true })
   }
-  return resposta.json()
+
+  try {
+    const resposta = await fetch(`${baseUrl}/saude?t=${Date.now()}`, {
+      method: 'GET',
+      cache: 'no-store',
+      mode: 'cors',
+      signal: controlador.signal,
+    })
+    if (!resposta.ok) {
+      throw new Error(`API respondeu ${resposta.status}`)
+    }
+    return await resposta.json()
+  } finally {
+    clearTimeout(encerrarPorTimeout)
+  }
 }
 
 export async function enviarProjeto(baseUrl, { nomeDoProjeto, arquivo, onProgresso }) {
@@ -56,6 +73,10 @@ export async function consultarProjeto(baseUrl, idDoProjeto) {
 
 export function urlDoVideo(baseUrl, idDoProjeto) {
   return `${baseUrl}/projetos/${idDoProjeto}/video`
+}
+
+export function urlDoQuadro(baseUrl, idDoProjeto, numeroSequencial, cacheBust) {
+  return `${baseUrl}/projetos/${idDoProjeto}/quadros/${numeroSequencial}?t=${cacheBust ?? Date.now()}`
 }
 
 export function carregarBaseUrlSalva() {
