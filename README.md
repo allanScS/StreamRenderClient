@@ -2,7 +2,6 @@
 
 Cliente web (React + Vite) para enviar vídeos à API local do StreamRender.
 
-Pensado para publicar como **site estático** (ex.: Render). O browser de quem abre o site fala com `http://localhost:8080` — a API precisa estar rodando **na máquina de quem testa**.
 
 ## Pré-requisitos
 
@@ -32,10 +31,9 @@ Publique a pasta `dist/`. No Render: Static Site, build command `npm run build`,
 
 ## Fluxo
 
-1. O cliente chama `GET /saude` a cada 2 segundos.
+1. O cliente chama `GET /saude` a cada 2 segundos para verificar se a api está rodando.
 2. Se a API responder, libera o upload.
 3. `POST /projetos` envia o vídeo (multipart).
 4. Consulta `GET /projetos/{id}` até consolidar.
-5. Oferece download em `GET /projetos/{id}/video`.
 
 A URL da API padrão é `http://localhost:8080` (editável na tela e salva no `localStorage`).
