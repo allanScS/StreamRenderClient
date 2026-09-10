@@ -22,8 +22,76 @@ function formatarBytes(bytes) {
 
 function estadoInicialWorkers() {
   return Object.fromEntries(
-    WORKERS.map((id) => [id, { ultimoNumero: null, contagem: 0, atualizadoEm: 0 }]),
+    WORKERS.map((id) => [id, { atual: null, contagem: 0, vistos: [], atualizadoEm: 0 }]),
   )
+}
+
+/**
+ * Atualiza contagem e o quadro exibido.
+ * Se surgirem frames novos desde o poll anterior, mostra o mais recente (por dataDeConclusao).
+ */
+function workersAPartirDaSituacao(situacao, anterior = null) {
+  const mapa = estadoInicialWorkers()
+  if (!situacao?.quadros?.length) return mapa
+
+  const porWorker = Object.fromEntries(WORKERS.map((id) => [id, []]))
+
+  for (const quadro of situacao.quadros) {
+    const id = quadro.idDoWorkerProcessador
+    if (!id || !porWorker[id]) continue
+    if (quadro.status !== 'Concluído') continue
+    porWorker[id].push(quadro)
+  }
+
+  for (const id of WORKERS) {
+    const frames = porWorker[id]
+    const numeros = frames.map((f) => f.numeroSequencial)
+    const prev = anterior?.[id]
+    const vistosAnteriores = new Set(prev?.vistos ?? [])
+    const novos = frames.filter((f) => !vistosAnteriores.has(f.numeroSequencial))
+
+    mapa[id].contagem = frames.length
+    mapa[id].vistos = numeros
+
+    if (novos.length > 0) {
+      const escolhido = escolherMaisRecente(novos)
+      mapa[id].atual = escolhido.numeroSequencial
+      mapa[id].atualizadoEm = Date.now()
+    } else if (prev?.atual != null && numeros.includes(prev.atual)) {
+      mapa[id].atual = prev.atual
+      mapa[id].atualizadoEm = prev.atualizadoEm
+    } else if (frames.length > 0) {
+      const escolhido = escolherMaisRecente(frames)
+      mapa[id].atual = escolhido.numeroSequencial
+      mapa[id].atualizadoEm = Date.now()
+    }
+  }
+
+  return mapa
+}
+
+function escolherMaisRecente(frames) {
+  return [...frames].sort((a, b) => {
+    const ta = a.dataDeConclusao ? Date.parse(a.dataDeConclusao) : 0
+    const tb = b.dataDeConclusao ? Date.parse(b.dataDeConclusao) : 0
+    if (tb !== ta) return tb - ta
+    return b.numeroSequencial - a.numeroSequencial
+  })[0]
+}
+
+function mesclarQuadroNoWorker(atual, idWorker, numero) {
+  const anterior = atual[idWorker] ?? { atual: null, contagem: 0, vistos: [], atualizadoEm: 0 }
+  const jaVisto = anterior.vistos.includes(numero)
+  const vistos = jaVisto ? anterior.vistos : [...anterior.vistos, numero]
+  return {
+    ...atual,
+    [idWorker]: {
+      atual: numero,
+      contagem: Math.max(anterior.contagem, vistos.length),
+      vistos,
+      atualizadoEm: Date.now(),
+    },
+  }
 }
 
 export default function App() {
@@ -92,6 +160,7 @@ export default function App() {
         const dados = await consultarProjeto(base, projeto.idDoProjeto)
         if (cancelado) return
         setSituacao(dados)
+        setWorkers((anterior) => workersAPartirDaSituacao(dados, anterior))
         if (dados.consolidado) {
           clearInterval(pollRef.current)
         }
@@ -101,7 +170,7 @@ export default function App() {
     }
 
     tick()
-    pollRef.current = setInterval(tick, 2000)
+    pollRef.current = setInterval(tick, 1500)
 
     ;(async () => {
       try {
@@ -115,22 +184,13 @@ export default function App() {
           onQuadroProcessado: (evento) => {
             const idWorker = evento.idDoWorker
             if (!WORKERS.includes(idWorker)) return
-            setWorkers((atual) => {
-              const anterior = atual[idWorker] ?? { ultimoNumero: null, contagem: 0, atualizadoEm: 0 }
-              return {
-                ...atual,
-                [idWorker]: {
-                  ultimoNumero: evento.numeroSequencial,
-                  contagem: anterior.contagem + 1,
-                  atualizadoEm: Date.now(),
-                },
-              }
-            })
+            setWorkers((atual) => mesclarQuadroNoWorker(atual, idWorker, evento.numeroSequencial))
           },
           onProjetoConsolidado: async () => {
             try {
               const dados = await consultarProjeto(base, projeto.idDoProjeto)
               setSituacao(dados)
+              setWorkers((anterior) => workersAPartirDaSituacao(dados, anterior))
             } catch {
               // poll cobre
             }
@@ -211,50 +271,50 @@ export default function App() {
     ? Math.round((situacao.quadrosConcluidos / Math.max(situacao.quadrosTotais, 1)) * 100)
     : 0
 
-  const totalVistoAoVivo = WORKERS.reduce((acc, id) => acc + (workers[id]?.contagem ?? 0), 0)
+  const totalVistos = WORKERS.reduce((acc, id) => acc + (workers[id]?.contagem ?? 0), 0)
 
   return (
     <div className="page wide">
       <div className="glow" aria-hidden="true" />
       <header className="top">
-        <div>
+        <div className="intro">
           <p className="brand">StreamRender</p>
           <h1>Envie um vídeo. A farm renderiza em paralelo.</h1>
           <p className="lead">
-            À esquerda você sobe o arquivo. À direita, cada worker mostra o último quadro
-            que processou — competing consumers em tempo real.
+            À esquerda você sobe o arquivo. À direita, cada worker mostra o quadro atual
+            em tela cheia — competing consumers em tempo real.
           </p>
         </div>
-        <div className={`status-pill ${apiOnline === true ? 'on' : apiOnline === false ? 'off' : ''}`}>
-          <span className="dot" />
-          {verificando && apiOnline === null && 'Verificando API…'}
-          {apiOnline === true && 'API local online'}
-          {apiOnline === false && 'API local offline'}
-          {apiOnline === null && !verificando && 'Status desconhecido'}
+
+        <div className="api-side">
+          <div className={`status-pill ${apiOnline === true ? 'on' : apiOnline === false ? 'off' : ''}`}>
+            <span className="dot" />
+            {verificando && apiOnline === null && 'Verificando API…'}
+            {apiOnline === true && 'API local online'}
+            {apiOnline === false && 'API local offline'}
+            {apiOnline === null && !verificando && 'Status desconhecido'}
+          </div>
+          <label htmlFor="apiUrl">URL da API (localhost)</label>
+          <div className="row">
+            <input
+              id="apiUrl"
+              value={baseUrl}
+              onChange={(e) => setBaseUrl(e.target.value)}
+              placeholder={API_PADRAO}
+              spellCheck={false}
+            />
+            <button type="button" className="secondary" onClick={() => checarApi()} disabled={verificando}>
+              {verificando ? 'Checando…' : 'Checar'}
+            </button>
+          </div>
+          {apiOnline === false && (
+            <p className="hint warn">
+              Não encontrei <code>/saude</code> em {baseUrl}. Rode{' '}
+              <code>docker compose up --build</code> na pasta StreamRender.
+            </p>
+          )}
         </div>
       </header>
-
-      <section className="panel connection">
-        <label htmlFor="apiUrl">URL da API (localhost)</label>
-        <div className="row">
-          <input
-            id="apiUrl"
-            value={baseUrl}
-            onChange={(e) => setBaseUrl(e.target.value)}
-            placeholder={API_PADRAO}
-            spellCheck={false}
-          />
-          <button type="button" className="secondary" onClick={() => checarApi()} disabled={verificando}>
-            {verificando ? 'Checando…' : 'Checar'}
-          </button>
-        </div>
-        {apiOnline === false && (
-          <p className="hint warn">
-            Não encontrei <code>/saude</code> em {baseUrl}. Rode{' '}
-            <code>docker compose up --build</code> na pasta StreamRender.
-          </p>
-        )}
-      </section>
 
       <div className="workspace">
         <form className="panel upload" onSubmit={onSubmit}>
@@ -336,14 +396,7 @@ export default function App() {
             </span>
           </div>
 
-          {!projeto && (
-            <p className="hint farm-empty">
-              Depois do upload, cada coluna mostra o último quadro processado por aquele worker.
-              A ordem dos números costuma ser “aleatória” — competing consumers.
-            </p>
-          )}
-
-          {projeto && (
+          {projeto ? (
             <>
               <dl className="meta-grid compact">
                 <div>
@@ -359,8 +412,8 @@ export default function App() {
                   <dd>{situacao?.status ?? 'Aguardando workers…'}</dd>
                 </div>
                 <div>
-                  <dt>Vistos ao vivo</dt>
-                  <dd>{totalVistoAoVivo}</dd>
+                  <dt>Na farm</dt>
+                  <dd>{totalVistos}</dd>
                 </div>
                 {situacao?.idDoWorkerLider && (
                   <div>
@@ -379,58 +432,71 @@ export default function App() {
                   <div style={{ width: `${progressoRender}%` }} />
                 </div>
               </div>
-
-              <div className="worker-grid">
-                {WORKERS.map((id) => {
-                  const slot = workers[id]
-                  const lider = situacao?.idDoWorkerLider === id
-                  const temQuadro = slot?.ultimoNumero != null
-                  return (
-                    <article key={id} className={`worker-card ${lider ? 'leader' : ''}`}>
-                      <header>
-                        <strong className="mono">{id}</strong>
-                        {lider && <span className="badge">líder</span>}
-                      </header>
-                      <div className="worker-frame">
-                        {temQuadro && projeto ? (
-                          <img
-                            key={`${id}-${slot.ultimoNumero}-${slot.atualizadoEm}`}
-                            src={urlDoQuadro(base, projeto.idDoProjeto, slot.ultimoNumero, slot.atualizadoEm)}
-                            alt={`Quadro ${slot.ultimoNumero} por ${id}`}
-                          />
-                        ) : (
-                          <span className="waiting">aguardando…</span>
-                        )}
-                      </div>
-                      <footer>
-                        <span>
-                          {temQuadro ? `#${slot.ultimoNumero}` : '—'}
-                        </span>
-                        <span>{slot?.contagem ?? 0} feitos</span>
-                      </footer>
-                    </article>
-                  )
-                })}
-              </div>
-
-              {situacao?.consolidado && (
-                <div className="done">
-                  <p>Vídeo pronto. O líder montou o arquivo final.</p>
-                  <a
-                    className="primary link"
-                    href={urlDoVideo(base, projeto.idDoProjeto)}
-                    download
-                  >
-                    Baixar vídeo
-                  </a>
-                  <video
-                    className="result-video"
-                    src={urlDoVideo(base, projeto.idDoProjeto)}
-                    controls
-                  />
-                </div>
-              )}
             </>
+          ) : (
+            <p className="hint farm-empty">
+              Depois do upload, cada coluna troca o quadro atual pelo próximo que o worker
+              processar. O número sobre a imagem é a posição real no vídeo.
+            </p>
+          )}
+
+          <div className="worker-grid">
+            {WORKERS.map((id) => {
+              const slot = workers[id]
+              const lider = situacao?.idDoWorkerLider === id
+              const atual = slot?.atual ?? null
+              const contagem = slot?.contagem ?? 0
+              return (
+                <article key={id} className={`worker-card ${lider ? 'leader' : ''}`}>
+                  <header>
+                    <strong className="mono">{id}</strong>
+                    {lider && <span className="badge">líder</span>}
+                  </header>
+                  <div className="worker-stage">
+                    {!projeto || atual == null ? (
+                      <span className="waiting">
+                        {projeto ? 'aguardando…' : 'ocioso'}
+                      </span>
+                    ) : (
+                      <figure
+                        key={`${id}-${atual}-${slot.atualizadoEm}`}
+                        className="frame-view"
+                      >
+                        <img
+                          src={urlDoQuadro(base, projeto.idDoProjeto, atual, slot.atualizadoEm)}
+                          alt={`Quadro ${atual}`}
+                        />
+                        <span className="frame-badge" aria-label={`Posição ${atual} no vídeo`}>
+                          #{atual}
+                        </span>
+                      </figure>
+                    )}
+                  </div>
+                  <footer>
+                    <span>{atual != null ? `quadro #${atual}` : '—'}</span>
+                    <span>{projeto ? `${contagem} feitos` : '0 feitos'}</span>
+                  </footer>
+                </article>
+              )
+            })}
+          </div>
+
+          {situacao?.consolidado && projeto && (
+            <div className="done">
+              <p>Vídeo pronto. O líder montou o arquivo final.</p>
+              <a
+                className="primary link"
+                href={urlDoVideo(base, projeto.idDoProjeto)}
+                download
+              >
+                Baixar vídeo
+              </a>
+              <video
+                className="result-video"
+                src={urlDoVideo(base, projeto.idDoProjeto)}
+                controls
+              />
+            </div>
           )}
         </section>
       </div>

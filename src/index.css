@@ -117,9 +117,10 @@ code,
   background: #0c110f;
   overflow: hidden;
   display: grid;
-  grid-template-rows: auto 1fr auto;
-  min-height: 210px;
-  transition: border-color 180ms ease, transform 180ms ease;
+  grid-template-rows: auto minmax(220px, 36vh) auto;
+  min-height: 300px;
+  height: 100%;
+  transition: border-color 180ms ease;
 }
 
 .worker-card.leader {
@@ -157,9 +158,9 @@ code,
   font-weight: 700;
 }
 
-.worker-frame {
+.worker-stage {
   position: relative;
-  min-height: 140px;
+  min-height: 220px;
   background:
     linear-gradient(180deg, rgba(196, 240, 66, 0.03), transparent),
     #080b09;
@@ -168,12 +169,47 @@ code,
   overflow: hidden;
 }
 
-.worker-frame img {
+.worker-stage .waiting {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.frame-view {
+  position: relative;
+  margin: 0;
   width: 100%;
-  height: 150px;
-  object-fit: cover;
+  height: 100%;
+  min-height: 220px;
+  display: grid;
+  place-items: center;
+  animation: frame-in 240ms ease;
+}
+
+.frame-view img {
+  width: 100%;
+  height: 100%;
+  max-height: 36vh;
+  object-fit: contain;
   display: block;
-  animation: frame-in 220ms ease;
+  background: #000;
+}
+
+.frame-badge {
+  position: absolute;
+  top: 0.55rem;
+  left: 0.55rem;
+  z-index: 1;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #f4ffe8;
+  background: rgba(8, 12, 9, 0.72);
+  border: 1px solid rgba(196, 240, 66, 0.45);
+  border-radius: 8px;
+  padding: 0.28rem 0.5rem;
+  backdrop-filter: blur(4px);
+  pointer-events: none;
 }
 
 .waiting {
@@ -183,8 +219,8 @@ code,
 
 @keyframes frame-in {
   from {
-    opacity: 0.35;
-    transform: scale(1.03);
+    opacity: 0.25;
+    transform: scale(1.02);
   }
   to {
     opacity: 1;
@@ -213,8 +249,41 @@ footer {
 
 .top {
   display: grid;
-  gap: 1.25rem;
+  grid-template-columns: minmax(0, 1.2fr) minmax(260px, 0.85fr);
+  gap: 1.5rem 2rem;
+  align-items: start;
   margin-bottom: 1.5rem;
+}
+
+.intro {
+  min-width: 0;
+}
+
+.api-side {
+  display: grid;
+  gap: 0.55rem;
+  align-content: start;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--bg-elevated) 92%, black);
+}
+
+.api-side label {
+  display: block;
+  margin: 0.15rem 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.api-side .status-pill {
+  justify-self: stretch;
+  width: fit-content;
+}
+
+.api-side input:focus {
+  border-color: rgba(196, 240, 66, 0.55);
+  box-shadow: 0 0 0 3px rgba(196, 240, 66, 0.12);
 }
 
 .brand {
@@ -505,6 +574,7 @@ footer {
 }
 
 @media (max-width: 900px) {
+  .top,
   .workspace {
     grid-template-columns: 1fr;
   }
